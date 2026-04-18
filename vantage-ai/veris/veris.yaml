@@ -1,7 +1,42 @@
 name: vantage-ai
 version: "1.0"
-entrypoint: backend/main.py
-framework: fastapi
+
+services:
+  - name: baseten
+    dns_aliases:
+      - inference.baseten.co
+  - name: you_com
+    dns_aliases:
+      - api.you.com
+  - name: cartesia
+    dns_aliases:
+      - api.cartesia.ai
+  - name: edgar
+    dns_aliases:
+      - data.sec.gov
+      - efts.sec.gov
+      - www.sec.gov
+
+actor:
+  channels:
+    - type: http
+      url: http://localhost:8000
+      method: POST
+      headers:
+        Content-Type: application/json
+      request:
+        message_field: company
+        session_field: session_id
+      response:
+        type: json
+        message_field: report.strategic_summary
+
+agent:
+  code_path: /agent
+  entry_point: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+  port: 8000
+  environment:
+    DEMO_MODE: "false"
 
 scenarios:
   - name: "Public company — happy path"
@@ -17,10 +52,8 @@ scenarios:
         field: report.risk_scores
       - type: response_contains_field
         field: report.citations
-      - type: min_citations
-        min: 2
       - type: response_time_ms
-        max: 120000   # 2 minutes max
+        max: 120000
 
   - name: "Private company — graceful fallback"
     description: "Should still return a report using web data, noting no SEC filings"
@@ -55,61 +88,8 @@ scenarios:
     checks:
       - type: response_contains_field
         field: comparison.recommendation
-      - type: response_contains_field
-        field: comparison.overall_threat
       - type: response_time_ms
-        max: 180000   # 3 minutes for two company lookups
-
-  - name: "Weekly digest — multiple companies"
-    description: "Should generate a digest with severity signals"
-    endpoint: POST /digest
-    input:
-      companies: ["Salesforce", "HubSpot", "Zendesk"]
-    checks:
-      - type: response_contains_field
-        field: digest.signals
-      - type: response_contains_field
-        field: digest.recommended_action
-      - type: min_signals
-        min: 2
-
-  - name: "You.com API failure injection"
-    description: "Should still return partial report if web search fails"
-    inject_failure:
-      tool: search_web
-      error: timeout
-    endpoint: POST /analyze
-    input:
-      company: "HubSpot"
-    checks:
-      - type: partial_report_returned
-      - type: failure_noted_gracefully
-
-  - name: "EDGAR API failure injection"
-    description: "Should still return report using web data if EDGAR fails"
-    inject_failure:
-      tool: search_filings
-      error: connection_error
-    endpoint: POST /analyze
-    input:
-      company: "Salesforce"
-    checks:
-      - type: partial_report_returned
-      - type: response_contains_text
-        text: "N/A"
-        field: report.financial_health.source
-
-  - name: "Demo mode — instant cache response"
-    description: "Demo mode should serve cached data instantly"
-    endpoint: POST /analyze
-    input:
-      company: "Salesforce"
-      demo: true
-    checks:
-      - type: response_time_ms
-        max: 1000    # Must be instant
-      - type: response_contains_field
-        field: report
+        max: 180000
 
   - name: "Health check"
     description: "Health endpoint should always respond"

@@ -2,10 +2,14 @@ import { useState } from "react";
 import CompanySearch from "./components/CompanySearch";
 import ReportView from "./components/ReportView";
 import VoiceButton from "./components/VoiceButton";
+import VoiceAgent from "./components/VoiceAgent";
 import { analyzeCompany } from "./api";
 import "./App.css";
 
+const MODES = ["first_look", "voice"];
+
 export default function App() {
+  const [mode, setMode] = useState("first_look");
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState("");
   const [report, setReport] = useState(null);
@@ -56,11 +60,22 @@ export default function App() {
       </header>
 
       <nav className="mode-tabs">
-        <button className="tab active">Analysis</button>
+        {MODES.map((m) => (
+          <button
+            key={m}
+            className={`tab ${mode === m ? "active" : ""}`}
+            onClick={() => { setMode(m); setReport(null); setError(null); }}
+          >
+            {m === "first_look" ? "Analysis" : "Voice"}
+          </button>
+        ))}
       </nav>
 
       <main className="main">
-        <CompanySearch onAnalyze={handleAnalyze} loading={loading} />
+        {mode === "first_look" && (
+          <CompanySearch onAnalyze={handleAnalyze} loading={loading} />
+        )}
+        {mode === "voice" && <VoiceAgent />}
 
         {loading && (
           <div className="loading">
