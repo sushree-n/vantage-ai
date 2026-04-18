@@ -33,3 +33,4 @@ frontend/.env.local
 
 # Logs
 *.log
+.DS_Store
