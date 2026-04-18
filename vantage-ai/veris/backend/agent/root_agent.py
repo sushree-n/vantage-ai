@@ -9,18 +9,18 @@ from backend.agent.prompts import SYSTEM_PROMPT, HEAD_TO_HEAD_PROMPT, DIGEST_PRO
 load_dotenv()
 
 BASETEN_API_KEY = os.getenv("BASETEN_API_KEY")
-BASETEN_MODEL_URL = os.getenv("BASETEN_MODEL_URL")
+BASETEN_MODEL_SLUG = os.getenv("BASETEN_MODEL_SLUG")
 
-if not BASETEN_API_KEY or not BASETEN_MODEL_URL:
+if not BASETEN_API_KEY or not BASETEN_MODEL_SLUG:
     raise ValueError(
-        "BASETEN_API_KEY and BASETEN_MODEL_URL must be set in your .env file.\n"
-        "Find your model URL in the Baseten dashboard under 'Call model'."
+        "BASETEN_API_KEY and BASETEN_MODEL_SLUG must be set in your .env file.\n"
+        "Example: BASETEN_MODEL_SLUG=deepseek-ai/DeepSeek-V3.1"
     )
 
-# CrewAI calls Baseten directly as an OpenAI-compatible endpoint — no LiteLLM needed.
+# Baseten Model APIs are OpenAI-compatible — CrewAI connects directly, no LiteLLM needed.
 baseten_llm = LLM(
-    model="openai/baseten",
-    base_url=BASETEN_MODEL_URL,
+    model=f"openai/{BASETEN_MODEL_SLUG}",
+    base_url="https://inference.baseten.co/v1",
     api_key=BASETEN_API_KEY,
 )
 

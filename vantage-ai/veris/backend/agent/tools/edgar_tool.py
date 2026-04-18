@@ -1,5 +1,3 @@
-import os
-import json
 import requests
 
 EDGAR_BASE = "https://data.sec.gov"

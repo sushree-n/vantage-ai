@@ -1,6 +1,7 @@
 # Environment
 .env
 .env.local
+frontend/.env.local
 
 # Python
 __pycache__/
@@ -13,7 +14,7 @@ env/
 .venv/
 *.egg-info/
 dist/
-build/
+build/test_output.mp3
 
 # Pre-cached RAG data (too large for git, generate locally)
 backend/rag/*.json
