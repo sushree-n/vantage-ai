@@ -1,7 +1,9 @@
 import os
 import json
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from backend.agent.root_agent import (
@@ -58,6 +60,10 @@ class HeadToHeadRequest(BaseModel):
 class DigestRequest(BaseModel):
     companies: list[str]       # List of companies to monitor
     demo: bool = False
+
+
+class TTSRequest(BaseModel):
+    text: str
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -127,6 +133,39 @@ def generate_digest(req: DigestRequest):
         return {"source": "live", "digest": digest}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/tts")
+def text_to_speech(req: TTSRequest):
+    """Cartesia TTS — returns WAV audio of the given text using Brooke's voice."""
+    cartesia_key = os.getenv("CARTESIA_API_KEY")
+    if not cartesia_key:
+        raise HTTPException(status_code=500, detail="CARTESIA_API_KEY not set")
+
+    try:
+        r = httpx.post(
+            "https://api.cartesia.ai/tts/bytes",
+            headers={
+                "X-API-Key": cartesia_key,
+                "Cartesia-Version": "2024-06-10",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model_id": "sonic-2",
+                "transcript": req.text,
+                "voice": {"mode": "id", "id": "e07c00bc-4134-4eae-9ea4-1a55fb45746b"},
+                "output_format": {
+                    "container": "wav",
+                    "encoding": "pcm_s16le",
+                    "sample_rate": 44100,
+                },
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        return Response(content=r.content, media_type="audio/wav")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Cartesia error: {e.response.text}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

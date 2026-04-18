@@ -62,10 +62,10 @@ cp .env.example .env
 
 Required keys:
 - `BASETEN_API_KEY` — from [baseten.co](https://baseten.co)
-- `BASETEN_MODEL_URL` — your deployed model endpoint, e.g. `https://model-abc123.api.baseten.co/production/predict`
-  (find it in the Baseten dashboard under **Call model**)
+- `BASETEN_MODEL_SLUG` — your deployed model's slug, e.g. `deepseek-ai/DeepSeek-V3.1`. The code uses this to construct the API endpoint.
 - `YOU_COM_API_KEY` — from [you.com/api](https://you.com/api)
 - `VOICERUN_API_KEY` — from VoiceRun dashboard
+- `OPENAI_API_KEY` — from openai.com, required for pre-caching demo data.
 
 ### 3. Test the Baseten connection
 
@@ -76,7 +76,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 from backend.agent.root_agent import baseten_llm
-response = baseten_llm.call([{"role": "user", "content": "Say hello in one sentence."}])
+response = baseten_llm.invoke([{"role": "user", "content": "Say hello in one sentence."}])
 print("Baseten response:", response)
 EOF
 ```
