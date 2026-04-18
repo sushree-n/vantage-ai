@@ -1,11 +1,10 @@
 import os
-import requests
 from dotenv import load_dotenv
+from youdotcom import You
 
 load_dotenv()
 
 YOU_COM_API_KEY = os.getenv("YOU_COM_API_KEY")
-YOU_COM_BASE_URL = "https://api.ydc-index.io/search"
 
 
 def search_web(query: str) -> str:
@@ -27,32 +26,26 @@ def search_web(query: str) -> str:
         return "[ERROR] YOU_COM_API_KEY not set in environment."
 
     try:
-        response = requests.get(
-            YOU_COM_BASE_URL,
-            headers={"X-API-Key": YOU_COM_API_KEY},
-            params={
-                "query": query,
-                "num_web_results": 5,
-            },
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
+        with You(api_key_auth=YOU_COM_API_KEY) as you:
+            results = you.search.unified(query=query, count=5)
 
-        hits = data.get("hits", [])
-        if not hits:
+        if not (results and results.results and results.results.web):
             return f"[NO RESULTS] No web results found for: {query}"
 
         formatted = []
-        for hit in hits:
-            title = hit.get("title", "No title")
-            url = hit.get("url", "")
-            snippet = hit.get("description", hit.get("snippets", [""])[0] if hit.get("snippets") else "")
+        for result in results.results.web:
+            title = result.title or "No title"
+            url = result.url or ""
+            snippet = result.description or (result.snippets[0] if result.snippets else "")
             formatted.append(f"Source: {url}\nTitle: {title}\nSnippet: {snippet}\n")
 
         return "\n---\n".join(formatted)
 
-    except requests.exceptions.Timeout:
-        return f"[ERROR] You.com search timed out for query: {query}"
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
+        if "403 Forbidden" in str(e):
+            return (
+                "[ERROR] You.com search failed with 403 Forbidden. This likely means your "
+                "YOU_COM_API_KEY is invalid, has expired, or your account has usage limit issues. "
+                "Please check your You.com developer dashboard."
+            )
         return f"[ERROR] You.com search failed: {str(e)}"

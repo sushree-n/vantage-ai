@@ -50,8 +50,9 @@ researcher = Agent(
     ),
     backstory=(
         "You are a seasoned competitive intelligence researcher who knows how to find "
-        "signal in noise. You always cite your sources and never fabricate data. "
-        "For private companies with no SEC filings, you clearly note this."
+        "signal in noise. You are persistent and resourceful. If one tool fails, you "
+        "document the failure and continue gathering information with other available tools. "
+        "You always cite your sources and never fabricate data."
     ),
     tools=[web_search_tool, edgar_search_tool],
     llm=baseten_llm,
