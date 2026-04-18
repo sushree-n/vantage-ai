@@ -5,15 +5,7 @@ from youdotcom import You
 load_dotenv()
 
 YOU_COM_API_KEY = os.getenv("YOU_COM_API_KEY")
-<<<<<<< HEAD
-<<<<<<< HEAD
 YOU_COM_RESEARCH_URL = "https://api.you.com/v1/research"
-=======
->>>>>>> bc12274 (voice + agent prompt changes)
-=======
-YOU_COM_RESEARCH_URL = "https://api.you.com/v1/research"
->>>>>>> f75ea7e (added web search agent)
-
 
 def search_web(query: str) -> str:
     """
@@ -33,8 +25,6 @@ def search_web(query: str) -> str:
         return "[ERROR] YOU_COM_API_KEY not set in environment."
 
     try:
-<<<<<<< HEAD
-<<<<<<< HEAD
         response = requests.post(
             YOU_COM_RESEARCH_URL,
             headers={
@@ -55,36 +45,23 @@ def search_web(query: str) -> str:
 
         if not answer:
             return f"[NO RESULTS] Research returned no answer for: {query}"
-=======
-        with You(api_key_auth=YOU_COM_API_KEY) as you:
-            results = you.search.unified(query=query, count=5)
-=======
-        response = requests.get(
-            YOU_COM_BASE_URL,
-            headers={"X-API-Key": YOU_COM_API_KEY},
-            params={
-                "query": query,
-                "num_web_results": 5,
-            },
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
->>>>>>> f75ea7e (added web search agent)
 
         hits = data.get("hits", [])
         if not hits:
+        with You(api_key_auth=YOU_COM_API_KEY) as you:
+            results = you.search.unified(query=query, count=5)
+
+        if not (results and results.results and results.results.web):
             return f"[NO RESULTS] No web results found for: {query}"
 
         formatted = []
-        for hit in hits:
-            title = hit.get("title", "No title")
-            url = hit.get("url", "")
-            snippet = hit.get("description", hit.get("snippets", [""])[0] if hit.get("snippets") else "")
+        for result in results.results.web:
+            title = result.title or "No title"
+            url = result.url or ""
+            snippet = result.description or (result.snippets[0] if result.snippets else "")
             formatted.append(f"Source: {url}\nTitle: {title}\nSnippet: {snippet}\n")
->>>>>>> bc12274 (voice + agent prompt changes)
 
-<<<<<<< HEAD
+
         parts = [f"Research Answer:\n{answer}"]
 
         if sources:
@@ -97,12 +74,14 @@ def search_web(query: str) -> str:
 
         return "\n".join(parts)
 
-<<<<<<< HEAD
     except requests.exceptions.Timeout:
         return f"[ERROR] You.com research timed out for query: {query}"
     except requests.exceptions.RequestException as e:
         return f"[ERROR] You.com research failed: {str(e)}"
-=======
+    except requests.exceptions.Timeout:
+        return f"[ERROR] You.com search timed out for query: {query}"
+    except requests.exceptions.RequestException as e:
+
     except Exception as e:
         if "403 Forbidden" in str(e):
             return (
@@ -110,12 +89,6 @@ def search_web(query: str) -> str:
                 "YOU_COM_API_KEY is invalid, has expired, or your account has usage limit issues. "
                 "Please check your You.com developer dashboard."
             )
-=======
-        return "\n".join(parts)
 
-    except requests.exceptions.Timeout:
-        return f"[ERROR] You.com search timed out for query: {query}"
-    except requests.exceptions.RequestException as e:
->>>>>>> f75ea7e (added web search agent)
         return f"[ERROR] You.com search failed: {str(e)}"
->>>>>>> bc12274 (voice + agent prompt changes)
+
