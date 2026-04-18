@@ -3,9 +3,9 @@ import { useState } from "react";
 export default function CompanySearch({ onAnalyze, loading }) {
   const [company, setCompany] = useState("");
 
-  const handleSubmit = (demo = false) => {
+  const handleSubmit = () => {
     if (!company.trim()) return;
-    onAnalyze(company.trim(), demo);
+    onAnalyze(company.trim());
   };
 
   return (
@@ -23,18 +23,10 @@ export default function CompanySearch({ onAnalyze, loading }) {
       <div className="search-actions">
         <button
           className="btn-primary"
-          onClick={() => handleSubmit(false)}
+          onClick={handleSubmit}
           disabled={loading || !company.trim()}
         >
           {loading ? "Researching..." : "Analyze →"}
-        </button>
-        <button
-          className="btn-secondary"
-          onClick={() => { setCompany("Salesforce"); handleSubmit(true); }}
-          disabled={loading}
-          title="Load pre-cached demo data instantly"
-        >
-          Demo
         </button>
       </div>
       <p className="search-hint">
