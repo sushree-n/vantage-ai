@@ -10,7 +10,14 @@ from backend.agent.root_agent import (
     build_digest_crew,
 )
 from backend.agent.prompts import HEAD_TO_HEAD_PROMPT, DIGEST_PROMPT
-from backend.rag.retriever import list_cached_companies
+
+
+def list_cached_companies() -> list[str]:
+    """List pre-generated demo cache entries (independent of RAG)."""
+    cache_dir = os.path.join(os.path.dirname(__file__), "scripts", "demo_cache")
+    if not os.path.isdir(cache_dir):
+        return []
+    return [f[:-5] for f in os.listdir(cache_dir) if f.endswith(".json")]
 
 load_dotenv()
 

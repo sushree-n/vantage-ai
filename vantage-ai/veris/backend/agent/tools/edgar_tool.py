@@ -1,10 +1,21 @@
-import requests
+"""
+SEC EDGAR tool — pulls real financial data on demand via edgartools.
 
-EDGAR_BASE = "https://data.sec.gov"
-EDGAR_SEARCH = "https://efts.sec.gov/LATEST/search-index"
-USER_AGENT = "VantageAI team@vantage-ai.com"  # Required by SEC EDGAR
+Returns a markdown-formatted block with the latest income statement, balance
+sheet, and a citation link for the filing. Built-in edgartools caching makes
+repeat calls fast; for demo safety, warm the cache ahead of time with
+`backend/scripts/prewarm_edgar.py`.
+"""
+from __future__ import annotations
 
-# Map common tickers to CIK numbers for fast lookup
+import os
+
+from edgar import Company, set_identity
+
+# SEC requires a contact identity on every request.
+set_identity(os.getenv("EDGAR_IDENTITY", "VantageAI team@vantage-ai.com"))
+
+# Preserve the ticker map — the orchestrator imports it to seed known_tickers.
 TICKER_TO_CIK = {
     "CRM": "0001108524",   # Salesforce
     "HUBS": "0001404655",  # HubSpot
@@ -18,113 +29,84 @@ TICKER_TO_CIK = {
     "NOW": "0001373715",   # ServiceNow
 }
 
+# Reverse map for name-based lookup fallback.
+_NAME_TO_TICKER = {
+    "salesforce": "CRM",
+    "hubspot": "HUBS",
+    "microsoft": "MSFT",
+    "alphabet": "GOOGL",
+    "google": "GOOGL",
+    "amazon": "AMZN",
+    "apple": "AAPL",
+    "meta": "META",
+    "facebook": "META",
+    "oracle": "ORCL",
+    "sap": "SAP",
+    "servicenow": "NOW",
+}
+
+
+def _resolve_ticker(company_name: str) -> str | None:
+    key = company_name.strip().upper()
+    if key in TICKER_TO_CIK:
+        return key
+    return _NAME_TO_TICKER.get(company_name.strip().lower())
+
 
 def search_filings(company_name: str, filing_type: str = "10-K") -> str:
     """
-    Retrieve SEC EDGAR financial filing data for a public company.
-    Use this to get authoritative financial information including revenue trends,
-    debt levels, risk factors, executive compensation, and material events.
-    Only works for US-listed public companies — returns a clear message for
-    private companies so you can note this in the report.
+    Retrieve SEC EDGAR financial data for a public US company.
+
+    Returns the latest income statement + balance sheet as markdown, plus a
+    citation link to the filing on sec.gov. For private companies, returns a
+    clear 'not found' message so the analyst can note it in the report.
 
     Args:
-        company_name: Company name or ticker symbol, e.g. "Salesforce" or "CRM"
-        filing_type: SEC filing type — "10-K" (annual), "10-Q" (quarterly),
-                     "8-K" (material events). Defaults to "10-K".
+        company_name: Company name or ticker, e.g. "Salesforce" or "CRM".
+        filing_type:  "10-K" (annual), "10-Q" (quarterly), "8-K" (material).
 
     Returns:
-        Relevant excerpts from the most recent filing with citation reference.
+        A markdown block suitable to paste directly into the analyst context.
     """
-    company_upper = company_name.upper().strip()
-
-    # Step 1: Try CIK lookup from known tickers
-    cik = TICKER_TO_CIK.get(company_upper)
-
-    # Step 3: Fall back to EDGAR full-text search
-    if not cik:
-        cik = _search_cik_by_name(company_name)
-
-    if not cik:
+    ticker = _resolve_ticker(company_name)
+    if not ticker:
         return (
-            f"[PRIVATE OR NOT FOUND] No SEC EDGAR filings found for '{company_name}'. "
-            f"This is likely a private company. Populate financial data from web sources only "
-            f"and note 'N/A — private company' in the financial_health.source field."
+            f"[PRIVATE OR NOT FOUND] No SEC EDGAR filings matched '{company_name}'. "
+            f"Likely a private company. Note 'N/A — private company' in "
+            f"financial_health.source and rely on web sources."
         )
 
-    # Step 4: Fetch the most recent filing
-    return _fetch_filing_summary(cik, company_name, filing_type)
-
-
-def _search_cik_by_name(company_name: str) -> str | None:
-    """Search EDGAR for a company CIK by name."""
     try:
-        response = requests.get(
-            f"{EDGAR_BASE}/cgi-bin/browse-edgar",
-            params={
-                "company": company_name,
-                "CIK": "",
-                "type": "10-K",
-                "dateb": "",
-                "owner": "include",
-                "count": "5",
-                "search_text": "",
-                "action": "getcompany",
-                "output": "atom",
-            },
-            headers={"User-Agent": USER_AGENT},
-            timeout=10,
-        )
-        # Parse CIK from response (simplified — full impl would parse XML)
-        if "CIK=" in response.text:
-            cik_start = response.text.find("CIK=") + 4
-            cik_end = response.text.find("&", cik_start)
-            return response.text[cik_start:cik_end].zfill(10)
-    except Exception:
-        pass
-    return None
+        company = Company(ticker)
+        financials = company.get_financials()
+        filings = company.get_filings(form=filing_type)
+        latest = filings.latest()
 
+        parts = [
+            f"[SEC {filing_type} — {company.name} ({ticker}, CIK {company.cik})]",
+            f"Filed: {latest.filing_date}",
+            f"Source: {latest.homepage_url}",
+            "",
+        ]
 
-def _fetch_filing_summary(cik: str, company_name: str, filing_type: str) -> str:
-    """Fetch and summarise key sections from the most recent filing."""
-    try:
-        # Get filing list
-        submissions_url = f"{EDGAR_BASE}/submissions/CIK{cik}.json"
-        resp = requests.get(
-            submissions_url,
-            headers={"User-Agent": USER_AGENT},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        if financials is not None:
+            income = financials.income_statement()
+            balance = financials.balance_sheet()
+            if income is not None:
+                parts.append("### Income Statement")
+                parts.append(income.to_markdown()[:3500])
+                parts.append("")
+            if balance is not None:
+                parts.append("### Balance Sheet")
+                parts.append(balance.to_markdown()[:3500])
+                parts.append("")
+        else:
+            parts.append("[No structured financials available for this issuer.]")
 
-        recent = data.get("filings", {}).get("recent", {})
-        forms = recent.get("form", [])
-        accession_numbers = recent.get("accessionNumber", [])
-        filing_dates = recent.get("filingDate", [])
-
-        # Find most recent matching filing
-        for i, form in enumerate(forms):
-            if form == filing_type:
-                accession = accession_numbers[i].replace("-", "")
-                date = filing_dates[i]
-                filing_url = (
-                    f"https://www.sec.gov/Archives/edgar/data/"
-                    f"{int(cik)}/{accession}/"
-                )
-                return (
-                    f"[SEC {filing_type} FILING — {company_name}]\n"
-                    f"Filed: {date}\n"
-                    f"Source: {filing_url}\n\n"
-                    f"Filing located. Use this citation reference in your report: "
-                    f"'SEC {filing_type} filed {date}'. "
-                    f"Key financial data should be retrieved from the RAG cache for this company. "
-                    f"If not cached, note the filing date and URL as the citation source."
-                )
-
-        return (
-            f"[NO {filing_type} FOUND] No {filing_type} filing found for {company_name} "
-            f"(CIK: {cik}). Try filing_type='10-Q' or '8-K'."
-        )
+        return "\n".join(parts)
 
     except Exception as e:
-        return f"[ERROR] Failed to fetch EDGAR data for {company_name}: {str(e)}"
+        return (
+            f"[ERROR] Failed to fetch EDGAR data for {company_name} ({ticker}): "
+            f"{type(e).__name__}: {e}"
+        )
