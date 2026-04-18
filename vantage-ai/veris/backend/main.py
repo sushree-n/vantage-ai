@@ -76,9 +76,12 @@ def health():
     return {
         "status": "ok",
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         "cached_companies": [],
 >>>>>>> bc12274 (voice + agent prompt changes)
+=======
+>>>>>>> f75ea7e (added web search agent)
         "demo_mode": DEMO_MODE,
     }
 
