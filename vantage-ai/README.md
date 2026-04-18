@@ -1,0 +1,170 @@
+# Vantage AI 🔍
+
+> Competitive intelligence co-pilot for startups — cited, grounded, voice-first.
+
+Built at **Enterprise Agent Jam NYC** in 6 hours.
+
+---
+
+## What it does
+
+Vantage gives any startup the competitive intelligence edge that used to cost $40k/year.
+Type a competitor name. Get a cited, risk-scored intelligence brief in ~90 seconds.
+Ask follow-up questions by voice. Get a weekly digest every Monday morning.
+
+### Three modes
+
+| Mode | What it does |
+|------|-------------|
+| **First Look** | Full cited company brief grounded in SEC filings + live web |
+| **Head to Head** | Side-by-side comparison with per-category winner and risk scores |
+| **Always On** | Weekly voice digest of competitive signals delivered Monday morning |
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| Agent orchestration | **Google ADK** — parallel sub-agent dispatch, session state |
+| Live web search | **You.com Search API** — news, job posts, G2 reviews, pricing |
+| Financial filings | **SEC EDGAR** — 10-K, 10-Q, 8-K (RAG layer with citations) |
+| LLM inference | **Baseten** — open-source model via LiteLLM |
+| Embeddings | OpenAI `text-embedding-3-small` (RAG retrieval) |
+| Voice I/O | **VoiceRun** — STT input, TTS output |
+| Agent testing | **Veris AI** — simulation & edge case testing |
+| Frontend | React |
+| Backend | FastAPI + Python |
+
+---
+
+## Setup
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/YOUR_ORG/vantage-ai.git
+cd vantage-ai
+
+# Backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# Frontend
+cd frontend && npm install && cd ..
+```
+
+### 2. Configure environment
+
+```bash
+cp .env.example .env
+# Fill in your API keys in .env
+```
+
+Required keys:
+- `BASETEN_API_KEY` + `BASETEN_MODEL_ID` — from [baseten.co](https://baseten.co)
+- `YOU_COM_API_KEY` — from [you.com/api](https://you.com/api)
+- `VOICERUN_API_KEY` — from VoiceRun dashboard
+- `OPENAI_API_KEY` — for RAG embeddings only
+
+### 3. Pre-cache demo data (do this before the demo!)
+
+```bash
+python -m backend.scripts.fetch_edgar
+```
+
+This pre-fetches and embeds Salesforce and HubSpot 10-K filings so demo responses are instant.
+
+### 4. Run
+
+```bash
+# Terminal 1 — Backend
+uvicorn backend.main:app --reload --port 8000
+
+# Terminal 2 — Frontend
+cd frontend && npm start
+```
+
+App runs at `http://localhost:3000`. API at `http://localhost:8000`.
+
+---
+
+## API endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check + cached companies list |
+| `POST` | `/analyze` | First Look — single company report |
+| `POST` | `/head-to-head` | Compare two companies |
+| `POST` | `/digest` | Weekly competitive digest |
+
+Add `"demo": true` to any request body to serve pre-cached data instantly.
+
+---
+
+## Running Veris AI tests
+
+```bash
+# Install Veris CLI
+pip install veris
+
+# Run simulation suite
+veris simulate --config veris/veris.yaml --runs 20
+
+# View report
+veris report
+```
+
+---
+
+## Architecture
+
+```
+VoiceRun STT ──→ Google ADK Root Agent ──→ VoiceRun TTS
+                  ├── You.com tool      (live web search)
+                  ├── EDGAR tool        (SEC filings RAG)
+                  └── Baseten LLM       (synthesis via LiteLLM)
+
+Veris AI ── build-time simulation & edge case testing
+```
+
+---
+
+## Project structure
+
+```
+vantage-ai/
+├── backend/
+│   ├── agent/
+│   │   ├── root_agent.py       Google ADK agent definition
+│   │   ├── prompts.py          System prompts for all modes
+│   │   └── tools/
+│   │       ├── you_com_tool.py You.com search tool
+│   │       └── edgar_tool.py   SEC EDGAR RAG tool
+│   ├── rag/
+│   │   ├── embedder.py         Chunk + embed filing text
+│   │   └── retriever.py        Vector similarity retrieval
+│   ├── scripts/
+│   │   ├── fetch_edgar.py      Pre-fetch demo company filings
+│   │   └── demo_cache/         Pre-generated demo responses (gitignored)
+│   └── main.py                 FastAPI server
+├── frontend/
+│   └── src/
+│       ├── App.jsx             Main app + mode routing
+│       ├── components/
+│       │   ├── CompanySearch   Search input + demo button
+│       │   ├── ReportView      Full report with risk scores + citations
+│       │   ├── HeadToHead      Two-company comparison input
+│       │   ├── DigestView      Weekly digest display
+│       │   └── VoiceButton     VoiceRun STT/TTS + browser fallback
+│       └── api/index.js        Axios API helpers
+├── veris/
+│   └── veris.yaml              Simulation scenarios
+├── .env.example
+├── requirements.txt
+└── README.md
+```
+
+---
+
+*Built at Enterprise Agent Jam NYC — April 2026*
