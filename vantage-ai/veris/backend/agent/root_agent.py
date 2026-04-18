@@ -1,74 +1,38 @@
-import os
-from dotenv import load_dotenv
-from crewai import Agent, Crew, Task, Process, LLM
-from crewai.tools import tool
-from backend.agent.tools.you_com_tool import search_web
-from backend.agent.tools.edgar_tool import search_filings
+from crewai import Agent, Crew, Task, Process
+from backend.agent.tools_registry import baseten_llm, edgar_search_tool
+from backend.agent.web_search_agents import web_search_agent, build_web_search_tasks
 from backend.agent.prompts import SYSTEM_PROMPT, HEAD_TO_HEAD_PROMPT, DIGEST_PROMPT
 
-load_dotenv()
 
-BASETEN_API_KEY = os.getenv("BASETEN_API_KEY")
-BASETEN_MODEL_SLUG = os.getenv("BASETEN_MODEL_SLUG")
+# ── Edgar agent (teammate owns the implementation) ───────────────────────────
 
-if not BASETEN_API_KEY or not BASETEN_MODEL_SLUG:
-    raise ValueError(
-        "BASETEN_API_KEY and BASETEN_MODEL_SLUG must be set in your .env file.\n"
-        "Example: BASETEN_MODEL_SLUG=deepseek-ai/DeepSeek-V3.1"
-    )
-
-# Baseten Model APIs are OpenAI-compatible — CrewAI connects directly, no LiteLLM needed.
-baseten_llm = LLM(
-    model=f"openai/{BASETEN_MODEL_SLUG}",
-    base_url="https://inference.baseten.co/v1",
-    api_key=BASETEN_API_KEY,
-)
-
-
-# ── Wrap existing tool functions for CrewAI ───────────────────────────────────
-
-@tool("Web search")
-def web_search_tool(query: str) -> str:
-    """Search the live web for news, job postings, reviews, and signals about a company."""
-    return search_web(query)
-
-
-@tool("SEC EDGAR search")
-def edgar_search_tool(company_name: str) -> str:
-    """Retrieve SEC EDGAR financial filing data for a public US company."""
-    return search_filings(company_name)
-
-
-# ── Agents ────────────────────────────────────────────────────────────────────
-
-researcher = Agent(
-    role="Competitive Intelligence Researcher",
-    goal=(
-        "Gather comprehensive, cited intelligence about a company from live web sources "
-        "and SEC financial filings. Search for news, executive changes, product launches, "
-        "funding rounds, customer reviews, job postings, and financial data."
-    ),
+edgar_agent = Agent(
+    role="SEC EDGAR Researcher",
+    goal="Retrieve authoritative financial data from SEC EDGAR filings for a public company.",
     backstory=(
-        "You are a seasoned competitive intelligence researcher who knows how to find "
-        "signal in noise. You always cite your sources and never fabricate data. "
-        "For private companies with no SEC filings, you clearly note this."
+        "You are a financial filings specialist who extracts revenue, risk factors, "
+        "and material events from SEC 10-K, 10-Q, and 8-K filings. "
+        "You always cite the exact filing URL and date."
     ),
-    tools=[web_search_tool, edgar_search_tool],
+    tools=[edgar_search_tool],
     llm=baseten_llm,
     verbose=True,
 )
 
-analyst = Agent(
+
+# ── Summarize agent ───────────────────────────────────────────────────────────
+
+summarize_agent = Agent(
     role="Competitive Intelligence Analyst",
     goal=(
-        "Analyse the raw research and produce a structured, risk-scored intelligence report "
-        "in valid JSON format. Score financial, legal, market, and management risk 1-10. "
-        "Write a strategic summary that tells a founder what to DO with this information."
+        "Synthesise the web research and SEC EDGAR findings into a structured, "
+        "risk-scored intelligence report in valid JSON. Score financial, legal, market, "
+        "and management risk 1-10. Every claim must have a citation."
     ),
     backstory=(
-        "You are a senior analyst at a top-tier strategy firm. You synthesise raw data into "
-        "clear, actionable intelligence. You always return valid JSON with no markdown fences. "
-        "Every claim in your report has a citation."
+        "You are a senior analyst at a top-tier strategy firm. You receive raw research "
+        "from multiple parallel agents and produce clear, actionable JSON intelligence. "
+        "You never fabricate data and always return valid JSON with no markdown fences."
     ),
     tools=[],
     llm=baseten_llm,
@@ -76,70 +40,84 @@ analyst = Agent(
 )
 
 
-# ── Crew factory functions ────────────────────────────────────────────────────
+# ── Crew factory ──────────────────────────────────────────────────────────────
 
-def build_first_look_crew(company: str) -> Crew:
-    research_task = Task(
+def build_first_look_crew(company: str, prompt: str = "") -> Crew:
+    # 5 parallel web search tasks — one agent, five topics
+    web_tasks = build_web_search_tasks(company, prompt)
+
+    # 1 parallel edgar task
+    edgar_task = Task(
         description=(
-            f"Research '{company}' thoroughly. Use web_search_tool to find recent news, "
-            f"job postings, executive changes, product launches, customer reviews (G2, Capterra), "
-            f"and pricing signals. Use edgar_search_tool to retrieve SEC filing data if the company "
-            f"is publicly listed. Gather as much cited evidence as possible."
+            f"Retrieve SEC EDGAR filing data for '{company}'. "
+            f"Search for the most recent 10-K and any material 8-K filings. "
+            f"If the company is private and has no filings, clearly note that."
         ),
         expected_output=(
-            "A comprehensive collection of cited facts about the company including: "
-            "business model, funding, executives, recent news, financial data (if public), "
-            "hiring trends, product moves, and customer sentiment. Every fact must have a source URL."
+            f"SEC filing citation for {company}: filing type, date, URL, and key financial figures. "
+            f"Note 'private company — no SEC filings' if not found."
         ),
-        agent=researcher,
+        agent=edgar_agent,
+        async_execution=True,
     )
 
-    analysis_task = Task(
+    # All 6 tasks (5 web + 1 edgar) run in parallel, then summarize
+    all_research = web_tasks + [edgar_task]
+
+    summarize_task = Task(
         description=(
-            f"Using the research provided, produce a structured intelligence report for '{company}'. "
+            f"Using the web research and SEC EDGAR findings provided, produce a structured "
+            f"intelligence report for '{company}'. "
             f"Follow this exact JSON structure:\n{SYSTEM_PROMPT}\n"
             f"Return ONLY the JSON object. No markdown fences. No preamble."
         ),
         expected_output="A valid JSON object matching the structure defined in the system prompt.",
-        agent=analyst,
-        context=[research_task],
+        agent=summarize_agent,
+        context=all_research,
     )
 
     return Crew(
-        agents=[researcher, analyst],
-        tasks=[research_task, analysis_task],
+        agents=[web_search_agent, edgar_agent, summarize_agent],
+        tasks=[*all_research, summarize_task],
         process=Process.sequential,
         verbose=True,
     )
 
 
 def build_head_to_head_crew(company_a: str, company_b: str) -> Crew:
-    research_a = Task(
-        description=f"Research '{company_a}' using web_search_tool and edgar_search_tool. Gather cited facts.",
-        expected_output=f"Cited intelligence facts about {company_a}.",
-        agent=researcher,
+    web_tasks_a = build_web_search_tasks(company_a)
+    web_tasks_b = build_web_search_tasks(company_b)
+
+    edgar_task_a = Task(
+        description=f"Retrieve SEC EDGAR filing data for '{company_a}'.",
+        expected_output=f"SEC filing citation for {company_a} with filing URL and key figures.",
+        agent=edgar_agent,
+        async_execution=True,
     )
 
-    research_b = Task(
-        description=f"Research '{company_b}' using web_search_tool and edgar_search_tool. Gather cited facts.",
-        expected_output=f"Cited intelligence facts about {company_b}.",
-        agent=researcher,
+    edgar_task_b = Task(
+        description=f"Retrieve SEC EDGAR filing data for '{company_b}'.",
+        expected_output=f"SEC filing citation for {company_b} with filing URL and key figures.",
+        agent=edgar_agent,
+        async_execution=True,
     )
+
+    all_research = web_tasks_a + web_tasks_b + [edgar_task_a, edgar_task_b]
 
     comparison_task = Task(
         description=(
-            f"Compare {company_a} and {company_b} using the research gathered. "
+            f"Compare {company_a} and {company_b} using all research provided. "
             f"Follow this JSON structure:\n{HEAD_TO_HEAD_PROMPT}\n"
             f"Return ONLY the JSON object."
         ),
         expected_output="A valid JSON comparison object with winner per category and recommendation.",
-        agent=analyst,
-        context=[research_a, research_b],
+        agent=summarize_agent,
+        context=all_research,
     )
 
     return Crew(
-        agents=[researcher, analyst],
-        tasks=[research_a, research_b, comparison_task],
+        agents=[web_search_agent, edgar_agent, summarize_agent],
+        tasks=[*all_research, comparison_task],
         process=Process.sequential,
         verbose=True,
     )
@@ -147,32 +125,25 @@ def build_head_to_head_crew(company_a: str, company_b: str) -> Crew:
 
 def build_digest_crew(companies: list[str]) -> Crew:
     companies_str = ", ".join(companies)
-
-    research_task = Task(
-        description=(
-            f"Search for news from the last 7 days for each of these companies: {companies_str}. "
-            f"Use web_search_tool with queries like '[company] news this week' and "
-            f"'[company] product launch funding announcement'. Gather cited signals."
-        ),
-        expected_output="Cited recent news signals for each company with source URLs.",
-        agent=researcher,
-    )
+    all_research = []
+    for company in companies:
+        all_research.extend(build_web_search_tasks(company))
 
     digest_task = Task(
         description=(
-            f"Generate a Monday morning competitive digest for these companies: {companies_str}. "
+            f"Generate a Monday morning competitive digest for: {companies_str}. "
             f"Follow this JSON structure:\n{DIGEST_PROMPT}\n"
             f"Keep the full digest under 200 words — it will be read aloud. "
             f"Return ONLY the JSON object."
         ),
         expected_output="A valid JSON digest object with severity-tagged signals and recommended action.",
-        agent=analyst,
-        context=[research_task],
+        agent=summarize_agent,
+        context=all_research,
     )
 
     return Crew(
-        agents=[researcher, analyst],
-        tasks=[research_task, digest_task],
+        agents=[web_search_agent, summarize_agent],
+        tasks=[*all_research, digest_task],
         process=Process.sequential,
         verbose=True,
     )

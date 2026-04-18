@@ -1,58 +1,94 @@
 import os
-import requests
 from dotenv import load_dotenv
+from youdotcom import You
 
 load_dotenv()
 
 YOU_COM_API_KEY = os.getenv("YOU_COM_API_KEY")
-YOU_COM_BASE_URL = "https://api.ydc-index.io/search"
-
+YOU_COM_RESEARCH_URL = "https://api.you.com/v1/research"
 
 def search_web(query: str) -> str:
     """
-    Search the live web for news, job postings, reviews, pricing, and signals
-    about a company. Use this for any real-time competitive intelligence including
-    recent news, executive changes, product launches, funding rounds, customer
-    reviews from G2 or Capterra, and hiring trends.
+    Deep research the web for competitive intelligence about a company.
+    Uses You.com Research API with deep effort to return a synthesised answer
+    with cited sources rather than raw snippets.
 
     Args:
-        query: Natural language search query, e.g.
-               "Salesforce recent product launches 2024" or
-               "HubSpot G2 customer reviews complaints"
+        query: Research question or topic, e.g.
+               "Salesforce revenue growth and financial health 2024" or
+               "HubSpot hiring trends and headcount changes 2024"
 
     Returns:
-        Formatted string of search results with sources and snippets.
+        Synthesised research answer with inline source citations.
     """
     if not YOU_COM_API_KEY:
         return "[ERROR] YOU_COM_API_KEY not set in environment."
 
     try:
-        response = requests.get(
-            YOU_COM_BASE_URL,
-            headers={"X-API-Key": YOU_COM_API_KEY},
-            params={
-                "query": query,
-                "num_web_results": 5,
+        response = requests.post(
+            YOU_COM_RESEARCH_URL,
+            headers={
+                "X-API-Key": YOU_COM_API_KEY,
+                "Content-Type": "application/json",
             },
-            timeout=10,
+            json={
+                "query": query,
+                "research_effort": "deep",
+            },
+            timeout=120,
         )
         response.raise_for_status()
         data = response.json()
 
+        answer = data.get("answer", "")
+        sources = data.get("sources", data.get("search_results", []))
+
+        if not answer:
+            return f"[NO RESULTS] Research returned no answer for: {query}"
+
         hits = data.get("hits", [])
         if not hits:
+        with You(api_key_auth=YOU_COM_API_KEY) as you:
+            results = you.search.unified(query=query, count=5)
+
+        if not (results and results.results and results.results.web):
             return f"[NO RESULTS] No web results found for: {query}"
 
         formatted = []
-        for hit in hits:
-            title = hit.get("title", "No title")
-            url = hit.get("url", "")
-            snippet = hit.get("description", hit.get("snippets", [""])[0] if hit.get("snippets") else "")
+        for result in results.results.web:
+            title = result.title or "No title"
+            url = result.url or ""
+            snippet = result.description or (result.snippets[0] if result.snippets else "")
             formatted.append(f"Source: {url}\nTitle: {title}\nSnippet: {snippet}\n")
 
-        return "\n---\n".join(formatted)
 
+        parts = [f"Research Answer:\n{answer}"]
+
+        if sources:
+            parts.append("\nSources:")
+            for src in sources[:10]:
+                url = src.get("url", src.get("link", ""))
+                title = src.get("title", src.get("name", ""))
+                if url:
+                    parts.append(f"  - {title}: {url}")
+
+        return "\n".join(parts)
+
+    except requests.exceptions.Timeout:
+        return f"[ERROR] You.com research timed out for query: {query}"
+    except requests.exceptions.RequestException as e:
+        return f"[ERROR] You.com research failed: {str(e)}"
     except requests.exceptions.Timeout:
         return f"[ERROR] You.com search timed out for query: {query}"
     except requests.exceptions.RequestException as e:
+
+    except Exception as e:
+        if "403 Forbidden" in str(e):
+            return (
+                "[ERROR] You.com search failed with 403 Forbidden. This likely means your "
+                "YOU_COM_API_KEY is invalid, has expired, or your account has usage limit issues. "
+                "Please check your You.com developer dashboard."
+            )
+
         return f"[ERROR] You.com search failed: {str(e)}"
+

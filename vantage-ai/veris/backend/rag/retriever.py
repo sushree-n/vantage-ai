@@ -7,6 +7,7 @@ import json
 import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -58,6 +59,16 @@ def retrieve_from_cache(ticker: str, query: str = None, top_k: int = 4) -> str |
     embeddings = store["embeddings_np"]
     metadata = store.get("metadata", {})
 
+    # Validate filing date from metadata to prevent issues with bad cache data
+    filing_date_str = metadata.get("filing_date", "date unknown")
+    try:
+        if filing_date_str != "date unknown":
+            filing_date = datetime.strptime(filing_date_str, "%Y-%m-%d")
+            if filing_date > datetime.now():
+                filing_date_str = "date unknown"  # Reset if date is in the future
+    except (ValueError, TypeError):
+        filing_date_str = "date unknown"
+
     if query:
         # Embed the query and find most similar chunks
         response = client.embeddings.create(
@@ -76,7 +87,7 @@ def retrieve_from_cache(ticker: str, query: str = None, top_k: int = 4) -> str |
 
     filing_ref = (
         f"SEC {metadata.get('filing_type', '10-K')} "
-        f"filed {metadata.get('filing_date', 'date unknown')} — "
+        f"filed {filing_date_str} — "
         f"{metadata.get('url', 'see SEC EDGAR')}"
     )
 
