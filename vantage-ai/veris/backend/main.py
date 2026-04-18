@@ -10,7 +10,7 @@ from backend.agent.root_agent import (
     build_digest_crew,
 )
 from backend.agent.prompts import HEAD_TO_HEAD_PROMPT, DIGEST_PROMPT
-from backend.rag.retriever import list_cached_companies
+
 
 load_dotenv()
 
@@ -66,7 +66,6 @@ class DigestRequest(BaseModel):
 def health():
     return {
         "status": "ok",
-        "cached_companies": list_cached_companies(),
         "demo_mode": DEMO_MODE,
     }
 
