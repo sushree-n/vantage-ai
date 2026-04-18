@@ -4,8 +4,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from google.adk.runners import Runner
-from backend.agent.root_agent import root_agent
+from backend.agent.root_agent import (
+    build_first_look_crew,
+    build_head_to_head_crew,
+    build_digest_crew,
+)
 from backend.agent.prompts import HEAD_TO_HEAD_PROMPT, DIGEST_PROMPT
 from backend.rag.retriever import list_cached_companies
 
@@ -24,8 +27,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-runner = Runner(agent=root_agent)
 
 # ── Demo cache (fallback if APIs are slow during demo) ────────────────────────
 DEMO_CACHE_DIR = os.path.join(os.path.dirname(__file__), "scripts", "demo_cache")
@@ -71,7 +72,7 @@ def health():
 
 
 @app.post("/analyze")
-async def analyze(req: AnalyzeRequest):
+def analyze(req: AnalyzeRequest):
     """
     First Look — full cited intelligence report for a single company.
     ~90 seconds for live analysis, instant for demo-cached companies.
@@ -83,19 +84,16 @@ async def analyze(req: AnalyzeRequest):
             return {"source": "demo_cache", "report": cached}
 
     try:
-        prompt = (
-            f"Research this company and return a structured intelligence report: "
-            f"{req.company}"
-        )
-        result = await runner.run_async(user_message=prompt)
-        report = _parse_json_response(result.text)
+        crew = build_first_look_crew(req.company)
+        result = crew.kickoff()
+        report = _parse_json_response(str(result))
         return {"source": "live", "report": report}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/head-to-head")
-async def head_to_head(req: HeadToHeadRequest):
+def head_to_head(req: HeadToHeadRequest):
     """
     Head to Head — side-by-side comparison of two companies.
     """
@@ -105,20 +103,16 @@ async def head_to_head(req: HeadToHeadRequest):
             return {"source": "demo_cache", "comparison": cached}
 
     try:
-        prompt = (
-            f"{HEAD_TO_HEAD_PROMPT}\n\n"
-            f"Compare these two companies: {req.company_a} vs {req.company_b}. "
-            f"Research both using your tools before comparing."
-        )
-        result = await runner.run_async(user_message=prompt)
-        comparison = _parse_json_response(result.text)
+        crew = build_head_to_head_crew(req.company_a, req.company_b)
+        result = crew.kickoff()
+        comparison = _parse_json_response(str(result))
         return {"source": "live", "comparison": comparison}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/digest")
-async def generate_digest(req: DigestRequest):
+def generate_digest(req: DigestRequest):
     """
     Always On — weekly competitive digest for a list of monitored companies.
     """
@@ -128,14 +122,9 @@ async def generate_digest(req: DigestRequest):
             return {"source": "demo_cache", "digest": cached}
 
     try:
-        companies_str = ", ".join(req.companies)
-        prompt = (
-            f"{DIGEST_PROMPT}\n\n"
-            f"Search for news in the last 7 days for these companies: {companies_str}. "
-            f"Generate a Monday morning digest."
-        )
-        result = await runner.run_async(user_message=prompt)
-        digest = _parse_json_response(result.text)
+        crew = build_digest_crew(req.companies)
+        result = crew.kickoff()
+        digest = _parse_json_response(str(result))
         return {"source": "live", "digest": digest}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

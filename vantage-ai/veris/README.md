@@ -26,11 +26,10 @@ Ask follow-up questions by voice. Get a weekly digest every Monday morning.
 
 | Layer | Technology |
 |-------|-----------|
-| Agent orchestration | **Google ADK** — parallel sub-agent dispatch, session state |
+| Agent orchestration | **CrewAI** — role-based researcher + analyst crew, sequential tasks |
 | Live web search | **You.com Search API** — news, job posts, G2 reviews, pricing |
-| Financial filings | **SEC EDGAR** — 10-K, 10-Q, 8-K (RAG layer with citations) |
-| LLM inference | **Baseten** — open-source model via LiteLLM |
-| Embeddings | OpenAI `text-embedding-3-small` (RAG retrieval) |
+| Financial filings | **SEC EDGAR** — 10-K, 10-Q, 8-K (fetch + truncate, no RAG) |
+| LLM inference | **Baseten** — open-source model, direct API (no LiteLLM) |
 | Voice I/O | **VoiceRun** — STT input, TTS output |
 | Agent testing | **Veris AI** — simulation & edge case testing |
 | Frontend | React |
@@ -44,7 +43,7 @@ Ask follow-up questions by voice. Get a weekly digest every Monday morning.
 
 ```bash
 git clone https://github.com/YOUR_ORG/vantage-ai.git
-cd vantage-ai
+cd vantage-ai/veris
 
 # Backend
 python -m venv venv && source venv/bin/activate
@@ -62,23 +61,30 @@ cp .env.example .env
 ```
 
 Required keys:
-- `BASETEN_API_KEY` + `BASETEN_MODEL_ID` — from [baseten.co](https://baseten.co)
+- `BASETEN_API_KEY` — from [baseten.co](https://baseten.co)
+- `BASETEN_MODEL_URL` — your deployed model endpoint, e.g. `https://model-abc123.api.baseten.co/production/predict`
+  (find it in the Baseten dashboard under **Call model**)
 - `YOU_COM_API_KEY` — from [you.com/api](https://you.com/api)
 - `VOICERUN_API_KEY` — from VoiceRun dashboard
-- `OPENAI_API_KEY` — for RAG embeddings only
 
-### 3. Pre-cache demo data (do this before the demo!)
+### 3. Test the Baseten connection
 
 ```bash
-python -m backend.scripts.fetch_edgar
+# Run from the veris/ directory
+python - <<'EOF'
+import os
+from dotenv import load_dotenv
+load_dotenv()
+from backend.agent.root_agent import baseten_llm
+response = baseten_llm.call([{"role": "user", "content": "Say hello in one sentence."}])
+print("Baseten response:", response)
+EOF
 ```
-
-This pre-fetches and embeds Salesforce and HubSpot 10-K filings so demo responses are instant.
 
 ### 4. Run
 
 ```bash
-# Terminal 1 — Backend
+# Terminal 1 — Backend (run from veris/)
 uvicorn backend.main:app --reload --port 8000
 
 # Terminal 2 — Frontend
@@ -120,10 +126,12 @@ veris report
 ## Architecture
 
 ```
-VoiceRun STT ──→ Google ADK Root Agent ──→ VoiceRun TTS
-                  ├── You.com tool      (live web search)
-                  ├── EDGAR tool        (SEC filings RAG)
-                  └── Baseten LLM       (synthesis via LiteLLM)
+VoiceRun STT ──→ CrewAI Research Crew ──→ VoiceRun TTS
+                  ├── Researcher agent
+                  │     ├── You.com tool   (live web search)
+                  │     └── EDGAR tool     (SEC filings, fetch+truncate)
+                  └── Analyst agent
+                        └── Baseten LLM   (direct API — no LiteLLM)
 
 Veris AI ── build-time simulation & edge case testing
 ```
@@ -133,19 +141,18 @@ Veris AI ── build-time simulation & edge case testing
 ## Project structure
 
 ```
-vantage-ai/
+veris/
 ├── backend/
 │   ├── agent/
-│   │   ├── root_agent.py       Google ADK agent definition
+│   │   ├── root_agent.py       CrewAI crew, agents, and task definitions
 │   │   ├── prompts.py          System prompts for all modes
 │   │   └── tools/
 │   │       ├── you_com_tool.py You.com search tool
-│   │       └── edgar_tool.py   SEC EDGAR RAG tool
+│   │       └── edgar_tool.py   SEC EDGAR filing tool
 │   ├── rag/
-│   │   ├── embedder.py         Chunk + embed filing text
-│   │   └── retriever.py        Vector similarity retrieval
+│   │   ├── embedder.py         (kept, not in main request path)
+│   │   └── retriever.py        (kept, not in main request path)
 │   ├── scripts/
-│   │   ├── fetch_edgar.py      Pre-fetch demo company filings
 │   │   └── demo_cache/         Pre-generated demo responses (gitignored)
 │   └── main.py                 FastAPI server
 ├── frontend/

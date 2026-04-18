@@ -1,7 +1,6 @@
 import os
 import json
 import requests
-from backend.rag.retriever import retrieve_from_cache
 
 EDGAR_BASE = "https://data.sec.gov"
 EDGAR_SEARCH = "https://efts.sec.gov/LATEST/search-index"
@@ -40,12 +39,7 @@ def search_filings(company_name: str, filing_type: str = "10-K") -> str:
     """
     company_upper = company_name.upper().strip()
 
-    # Step 1: Check pre-cached RAG data first (fast path for demo companies)
-    cached = retrieve_from_cache(company_upper)
-    if cached:
-        return f"[FROM CACHED FILINGS — {company_upper}]\n\n{cached}"
-
-    # Step 2: Try CIK lookup from known tickers
+    # Step 1: Try CIK lookup from known tickers
     cik = TICKER_TO_CIK.get(company_upper)
 
     # Step 3: Fall back to EDGAR full-text search
