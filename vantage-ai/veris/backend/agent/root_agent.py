@@ -10,9 +10,16 @@ edgar_agent = Agent(
     role="SEC EDGAR Researcher",
     goal="Retrieve authoritative financial data from SEC EDGAR filings for a public company.",
     backstory=(
+<<<<<<< HEAD
         "You are a financial filings specialist who extracts revenue, risk factors, "
         "and material events from SEC 10-K, 10-Q, and 8-K filings. "
         "You always cite the exact filing URL and date."
+=======
+        "You are a seasoned competitive intelligence researcher who knows how to find "
+        "signal in noise. You are persistent and resourceful. If one tool fails, you "
+        "document the failure and continue gathering information with other available tools. "
+        "You always cite your sources and never fabricate data."
+>>>>>>> bc12274 (voice + agent prompt changes)
     ),
     tools=[edgar_search_tool],
     llm=baseten_llm,

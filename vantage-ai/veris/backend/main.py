@@ -12,7 +12,10 @@ from backend.agent.root_agent import (
     build_digest_crew,
 )
 from backend.agent.prompts import HEAD_TO_HEAD_PROMPT, DIGEST_PROMPT
+<<<<<<< HEAD
 
+=======
+>>>>>>> bc12274 (voice + agent prompt changes)
 
 load_dotenv()
 
@@ -72,6 +75,10 @@ class TTSRequest(BaseModel):
 def health():
     return {
         "status": "ok",
+<<<<<<< HEAD
+=======
+        "cached_companies": [],
+>>>>>>> bc12274 (voice + agent prompt changes)
         "demo_mode": DEMO_MODE,
     }
 
